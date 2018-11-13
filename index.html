@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title></title>
+</head>
+
+<style>
+    #c1 {
+        border: 3px solid black;
+        margin: 40px;
+    }
+</style>
+
+<body>
+	<div id="canvas-wrapper">
+        <ul style="display: flex; list-style-type: none;">
+            <li><input type="color" id="color-palette" value="#000000"> </li>
+            <li><input type="button" id="brush" value="Brush"></li>
+            <li><input type="number" id="width" value="1"></li>
+            <li><input type="button" id="fill" value="Fill"></li>
+        </ul>
+        <canvas id="c1"></canvas>
+        
+    </div>
+    <script>
+        var brushInfo = (function() {
+            return function(color, width, height) {
+                return { color, width, height };
+            };
+        })();
+        var brushDrawer = (function() {
+            return function(context) {
+                return function(info) {
+                    return function(event) {
+                        console.log("brush " + info.color);
+                        context.lineTo(event.offsetX, event.offsetY);
+                        context.strokeStyle = info.color;
+                        context.lineWidth = info.width;
+                        context.lineCap = "round";
+                        context.stroke();
+                    };
+                };
+            };
+        })();
+
+        var filler = (function() {
+            return {
+                floodFill: (function() {
+                    return function(context, color) {
+                        var image = context.getImageData(0, 0, 300, 150);
+                        var width = context.width
+                        var height = context.height;
+                        function index(row, column) {
+                            return 4 * (column + row * width);
+                        }
+                        function sameColor(row1, column1, row2, column2) {
+                            for (var i = 0; i < 3; ++i) {
+                                if (image[index(row1, column1) + i] != image[index(row2, column2) + i]) {
+                                    return false;
+                                }
+                            }
+                            return true;
+                        }
+                        function set(row, column) {
+                            var i = index(row, column);
+                            context.beginPath();
+                            context.rect(row, column, 1, 1);
+                            context.fillStyle = color;
+                            context.fill();
+                            image[i] = 50;
+                            image[i + 1] = 50;
+                            image[i + 2] = 50;
+                            image[i + 3] = 50;
+                        }
+                        function fill(row, column) {
+                            console.log('filled on ' + row + ' ' + column);
+                            set(row, column);
+                            if (row>0 && sameColor(row, column, row - 1, column)) {
+                                fill(row - 1, column);
+                            }
+                            if (row<height && sameColor(row, column, row + 1, column)) {
+                                fill(row + 1, column);
+                            }
+                            if (column>0 && sameColor(row, column, row - 1, column)) {
+                                fill(row, column - 1);
+                            }
+                            if (column<width && sameColor(row, column, row + 1, column)) {
+                                fill(row, column + 1);
+                            }
+                        };
+                        function result(row, column) {
+                            fill(row, column);
+                            return image;
+                        }
+                        return result;
+                    };
+                })()
+            };
+        })();
+        var toolBox = (function() {
+            return function(color, brush, width, fill) {
+                return { color, brush, width, fill };
+            }
+        })();
+
+        var wrapCanvas = (function() {
+            return function(canvas, toolBox) {
+                var context = canvas.getContext("2d");
+                var brushDraw = brushDrawer(context);
+
+                toolBox.brush.onmousedown = () => {
+                    console.log("brush called");
+                    canvas.onmousedown = (event) => {
+                        context.beginPath();
+                        context.moveTo(event.offsetX, event.offsetY);
+                        canvas.onmousemove = brushDraw(brushInfo(toolBox.color.value, toolBox.width.value, 10));
+                    }
+                    canvas.onmouseup = () => {
+                        canvas.onmousemove = null;
+                        //var imageData = context.getImageData(1, 1, 100, 100);
+                        //console.log(imageData);
+                    }
+                }
+
+                var _fill = filler.floodFill(
+                    context,
+                    "green",
+                    100, 100);
+                toolBox.fill.onclick = () => {
+                    canvas.onmousedown = (event) => {
+                        console.log('i m here!');
+                        _fill(event.offsetX, event.offsetY);
+                    }
+                }
+            };
+        })();
+        wrapCanvas(
+            document.getElementById("c1"), 
+            toolBox(
+                document.getElementById("color-palette"), 
+                document.getElementById("brush"),
+                document.getElementById("width"),
+                document.getElementById("fill")));
+    </script>
+</body>
+
+</html>
+
