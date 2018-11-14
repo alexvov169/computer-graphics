@@ -7,7 +7,7 @@
 </head>
 
 <style>
-    #c1 {
+    #c1, #c2 {
         border: 3px solid black;
         margin: 40px;
     }
@@ -20,11 +20,49 @@
             <li><input type="button" id="brush" value="Brush"></li>
             <li><input type="number" id="width" value="1"></li>
             <li><input type="button" id="fill" value="Fill"></li>
+            <li><input type="button" id="fill-xor" value="XOR Fill"></li>
         </ul>
-        <canvas id="c1"></canvas>
+        <canvas id="c1" height="100px"></canvas>
+        <canvas id="c2" height="200px"></canvas>
         
     </div>
     <script>
+        function Rect(x, y, width, height) {
+            this.width = width;
+            this.height = height;
+            this.x = x;
+            this.y = y;
+        }
+        Rect.prototype.draw = function () {
+            ctx.beginPath();
+            ctx.rect(this.x, this.y, this.width, this.height);
+            ctx.fillStyle = 'green';
+            ctx.fill();
+            ctx.strokeStyle = colorStroke;
+            ctx.stroke();
+        }
+        function Point(x, y) {
+            this.x = x;
+            this.y = y;
+        }
+        Point.prototype.draw = function (x, y) {
+            ctx.fillStyle = colorFill;
+            ctx.fillRect(x, y, 1, 1);
+            ctx.stroke();
+        }
+        function drawPoint(x, y, ctx, colorFill) {
+            ctx.fillStyle = colorFill;
+            ctx.fillRect(x, y, 1, 1);
+            ctx.stroke();
+        }
+        
+        function componentToHex(c) {
+            var hex = c.toString(16);
+            return hex.length == 1 ? "0" + hex : hex;
+        }
+
+
+
         var brushInfo = (function() {
             return function(color, width, height) {
                 return { color, width, height };
@@ -47,48 +85,69 @@
 
         var filler = (function() {
             return {
-                floodFill: (function() {
-                    return function(context, color) {
-                        var image = context.getImageData(0, 0, 300, 150);
-                        var width = context.width
-                        var height = context.height;
+				flood: (function() {
+                    return function(context, image, color) {
+                        var width = context.canvas.width;
+                        var height = context.canvas.height;
+                        var rgb = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(color);
                         function index(row, column) {
                             return 4 * (column + row * width);
                         }
                         function sameColor(row1, column1, row2, column2) {
-                            for (var i = 0; i < 3; ++i) {
-                                if (image[index(row1, column1) + i] != image[index(row2, column2) + i]) {
+                            
+                            for (var i = 0; i < 4; ++i) {
+                                if (Math.abs([index(row1, column1) + i] - image.data[index(row2, column2) + i]) > 10) {
+                                    return false;
+                                }
+                            }
+                            return true;
+                        }
+                        function sameTo(b, row2, column2) {
+                            for (var i = 0; i < 4; ++i) {
+                                if (Math.abs(b[i] - image.data[index(row2, column2) + i]) > 10) {
                                     return false;
                                 }
                             }
                             return true;
                         }
                         function set(row, column) {
-                            var i = index(row, column);
-                            context.beginPath();
-                            context.rect(row, column, 1, 1);
-                            context.fillStyle = color;
-                            context.fill();
-                            image[i] = 50;
-                            image[i + 1] = 50;
-                            image[i + 2] = 50;
-                            image[i + 3] = 50;
+                            image.data[index(row, column)] = parseInt(rgb[1], 16);
+                            image.data[index(row, column) + 1] = parseInt(rgb[2], 16);
+                            image.data[index(row, column) + 2] = parseInt(rgb[3], 16);
+                            image.data[index(row, column) + 3] = 255;
                         }
+                        var i = 0;
                         function fill(row, column) {
-                            console.log('filled on ' + row + ' ' + column);
+							
+							var stack = [];
+							stack.push([row, column]);
+							while (stack.length != 0) {
+							var coordinates = stack.pop();
+							var row = coordinates[0];
+							var column = coordinates[1];
+                            var b = [
+                                image.data[index(row, column)], 
+                                image.data[index(row, column) + 1],
+                                image.data[index(row, column) + 2],
+                                image.data[index(row, column) + 3]];
                             set(row, column);
-                            if (row>0 && sameColor(row, column, row - 1, column)) {
-                                fill(row - 1, column);
-                            }
-                            if (row<height && sameColor(row, column, row + 1, column)) {
-                                fill(row + 1, column);
-                            }
-                            if (column>0 && sameColor(row, column, row - 1, column)) {
-                                fill(row, column - 1);
-                            }
-                            if (column<width && sameColor(row, column, row + 1, column)) {
-                                fill(row, column + 1);
-                            }
+                            //context.putImageData(image, 0, 0);
+                            
+                                if (row>0 && sameTo(b, row - 1, column)) {
+                                    stack.push([row - 1, column]);
+                                }
+                                
+                                if (row<height-1 && sameTo(b, row + 1, column)) {
+                                    stack.push([row + 1, column]);
+                                }
+                                if (column>0 && sameTo(b, row, column - 1)) {
+                                    stack.push([row, column - 1]);
+                                }
+                                if (column<width-1 && sameTo(b, row, column + 1)) {
+                                    stack.push([row, column + 1]);
+                                }
+                                }
+                             
                         };
                         function result(row, column) {
                             fill(row, column);
@@ -96,12 +155,106 @@
                         }
                         return result;
                     };
-                })()
+                })(),
+                flood1: (function() {
+                    return function(context, image, color) {
+                        var width = context.canvas.width;
+                        var height = context.canvas.height;
+                        var rgb = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(color);
+                        function index(row, column) {
+                            return 4 * (column + row * width);
+                        }
+                        function sameColor(row1, column1, row2, column2) {
+                            
+                            for (var i = 0; i < 4; ++i) {
+                                if (Math.abs([index(row1, column1) + i] - image.data[index(row2, column2) + i]) > 10) {
+                                    return false;
+                                }
+                            }
+                            return true;
+                        }
+                        function sameTo(b, row2, column2) {
+                            for (var i = 0; i < 4; ++i) {
+                                if (Math.abs(b[i] - image.data[index(row2, column2) + i]) > 10) {
+                                    return false;
+                                }
+                            }
+                            return true;
+                        }
+                        function set(row, column) {
+                            image.data[index(row, column)] = parseInt(rgb[1], 16);
+                            image.data[index(row, column) + 1] = parseInt(rgb[2], 16);
+                            image.data[index(row, column) + 2] = parseInt(rgb[3], 16);
+                            image.data[index(row, column) + 3] = 255;
+                        }
+                        var i = 0;
+                        function fill(row, column) {
+                            var b = [
+                                image.data[index(row, column)], 
+                                image.data[index(row, column) + 1],
+                                image.data[index(row, column) + 2],
+                                image.data[index(row, column) + 3]];
+                            set(row, column);
+                            //context.putImageData(image, 0, 0);
+                            
+                                if (row>0 && sameTo(b, row - 1, column)) {
+                                    fill(row - 1, column);
+                                }
+                                
+                                if (row<height-1 && sameTo(b, row + 1, column)) {
+                                    fill(row + 1, column);
+                                }
+                                if (column>0 && sameTo(b, row, column - 1)) {
+                                    fill(row, column - 1);
+                                }
+                                if (column<width-1 && sameTo(b, row, column + 1)) {
+                                    fill(row, column + 1);
+                                }
+                                
+                             
+                        };
+                        function result(row, column) {
+                            fill(row, column);
+                            return image;
+                        }
+                        return result;
+                    };
+                })(),
+                xor: function(ctx, pol, colorFill) {
+                    var yCur = pol[0][1];
+                    var yMax = pol[0][1];
+                    for (var i = 1; i < pol.length - 1; i++) {
+                        if (pol[i][0] < yCur) {
+                            yCur = pol[i][1];
+                        }
+                        if (pol[i][0] > yMax) {
+                            yMax = pol[i][1];
+                        }
+                    }
+                    while (yCur < yMax) {
+                        var xBuf = [];
+                        for (var i = 0; i < pol.length - 1; i++) {
+                            if ((pol[i][1] <= yCur && yCur < pol[i + 1][1]) || (pol[i][1] > yCur && yCur >= pol[i + 1][1])) {
+                                var x = (((yCur - pol[i][1]) * (pol[i + 1][0] - pol[i][0])) / (pol[i + 1][1] - pol[i][1])) + pol[i][0];
+                                xBuf.push(Math.ceil(x));
+                            }
+                        }
+                        xBuf.sort(function (a, b) {
+                            return a - b;
+                        });
+                        for (var i = 0; i < xBuf.length - 1; i += 2) {
+                            for (var j = xBuf[i]; j < xBuf[i + 1]; ++j) {
+                                drawPoint(j, yCur, ctx, colorFill);
+                            }
+                        }
+                        yCur++;
+                    }
+                }
             };
         })();
         var toolBox = (function() {
-            return function(color, brush, width, fill) {
-                return { color, brush, width, fill };
+            return function(color, brush, width, fill, XORfill) {
+                return { color, brush, width, fill, XORfill };
             }
         })();
 
@@ -124,25 +277,59 @@
                     }
                 }
 
-                var _fill = filler.floodFill(
-                    context,
-                    "green",
-                    100, 100);
+                /*var image = context.getImageData(0, 0, 300, 150);
+                image.data[3] = 255;
+                image.data[7] = 255;
+                image.data[11] = 255;
+                context.putImageData(image, 0, 0);*/
+
+                
                 toolBox.fill.onclick = () => {
+                    var _fill = filler.flood(
+                        context,
+                        context.getImageData(0, 0, canvas.width, canvas.height),
+                        toolBox.color.value);
                     canvas.onmousedown = (event) => {
-                        console.log('i m here!');
-                        _fill(event.offsetX, event.offsetY);
+                        context.putImageData(_fill(event.offsetY, event.offsetX), 0, 0);
                     }
+                }
+                toolBox.XORfill.onclick = () => {
+                    const colorFill = '#aaaaaa';
+                    const colorStroke = '#000000';
+                    var canvas2 = document.getElementById('c2');
+                    var polygon = [
+                        [60, 60],
+                        [80, 100],
+                        [80, 150],
+                        [140, 200],
+                        [100, 60],
+                        [60, 60]];
+                    
+                    ctx2 = canvas2.getContext('2d');
+                    for (var i = 0; i < polygon.length - 1; i++) {
+                        ctx2.moveTo(polygon[i][0], polygon[i][1]);
+                        ctx2.lineTo(polygon[i + 1][0], polygon[i + 1][1]);
+                    }
+                    ctx2.strokeStyle = colorStroke;
+                    ctx2.stroke();
+
+                    var _fill = filler.xor(
+                        ctx2,
+                        polygon,
+                        toolBox.color.value);
                 }
             };
         })();
+
+        
         wrapCanvas(
             document.getElementById("c1"), 
             toolBox(
                 document.getElementById("color-palette"), 
                 document.getElementById("brush"),
                 document.getElementById("width"),
-                document.getElementById("fill")));
+                document.getElementById("fill"),
+                document.getElementById("fill-xor")));
     </script>
 </body>
 
